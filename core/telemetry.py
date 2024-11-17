@@ -16,7 +16,7 @@ class F1TelemetryAnalyzer:
     A class for analyzing Formula 1 telemetry data, providing methods for preprocessing,
     analysis, and visualization of lap-by-lap data.
 
-    This analyzer supports filtering by events and drivers, resampling of telemetry data,
+    This analyzer supports filtering by rounds and drivers, resampling of telemetry data,
     distance matrix calculations, and comprehensive statistical analysis including PCA.
 
     Attributes:
@@ -28,23 +28,23 @@ class F1TelemetryAnalyzer:
 
     def filter_data(self,
                     telemetry_data: pd.DataFrame,
-                    events: Optional[List[str]] = None,
+                    rounds: Optional[List[str]] = None,
                     drivers: Optional[List[str]] = None) -> pd.DataFrame:
         """
-        Filter telemetry data by events and/or drivers.
+        Filter telemetry data by rounds and/or drivers.
 
         Args:
-            telemetry_data: Raw telemetry DataFrame containing all events and drivers
-            events: Optional list of event names to include in the filtered data
+            telemetry_data: Raw telemetry DataFrame containing all rounds and drivers
+            rounds: Optional list of round names to include in the filtered data
             drivers: Optional list of driver names to include in the filtered data
 
         Returns:
-            pd.DataFrame: Filtered telemetry data containing only specified events and drivers
+            pd.DataFrame: Filtered telemetry data containing only specified rounds and drivers
         """
         filtered_data = telemetry_data.copy()
 
-        if events:
-            filtered_data = filtered_data[filtered_data["Event"].isin(events)]
+        if rounds:
+            filtered_data = filtered_data[filtered_data["Round"].isin(rounds)]
         if drivers:
             filtered_data = filtered_data[filtered_data["Driver"].isin(
                 drivers)]
@@ -53,19 +53,19 @@ class F1TelemetryAnalyzer:
 
     def preprocess_lap_data(self,
                             telemetry_data: pd.DataFrame,
-                            events: Optional[List[str]] = None,
+                            rounds: Optional[List[int]] = None,
                             drivers: Optional[List[str]] = None):
         """
         Preprocess telemetry data by aligning and resampling lap data to fixed length.
 
         This method performs several preprocessing steps:
-        1. Filters data by specified events and drivers
+        1. Filters data by specified rounds and drivers
         2. Resamples each lap's telemetry to a fixed number of points
         3. Calculates various lap metrics (duration, speeds, brake applications, etc.)
 
         Args:
             telemetry_data: Raw telemetry DataFrame to process
-            events: Optional list of events to include
+            rounds: Optional list of rounds to include
             drivers: Optional list of drivers to include
 
         Returns:
@@ -73,32 +73,22 @@ class F1TelemetryAnalyzer:
                 - Processed telemetry data with resampled features
                 - DataFrame of lap metrics including duration, speeds, etc.
         """
-        filtered_data = self.filter_data(telemetry_data, events, drivers)
+        filtered_data = self.filter_data(telemetry_data, rounds, drivers)
 
-        grouped = filtered_data.groupby(["Event", "Driver", "LapNumber"])
+        grouped = filtered_data.groupby(["Round", "Driver", "LapNumber"])
         processed_laps = []
         lap_metrics = []
 
-        for (event, driver, lap), lap_data in grouped:
+        for (round_name, driver, lap), lap_data in grouped:
             lap_data = lap_data.sort_values("Time")
             lap_duration = (lap_data["Time"].max() -
                             lap_data["Time"].min()).total_seconds()
-            resampled_data = {}
 
-            for feature in self.feature_cols:
-                if feature in lap_data.columns:
-                    resampled = resample(lap_data[feature], self.n_samples)
-                    resampled_data[feature] = resampled
-
-            resampled_df = pd.DataFrame(resampled_data)
-            resampled_df["Event"] = event
-            resampled_df["Driver"] = driver
-            resampled_df["LapNumber"] = lap
-            resampled_df["normalized_time"] = np.linspace(0, 1, self.n_samples)
-            processed_laps.append(resampled_df)
+            lap_data["normalized_time"] = np.linspace(0, 1, self.n_samples)
+            processed_laps.append(lap_data)
 
             metrics = {
-                "event": event,
+                "round": round_name,
                 "driver": driver,
                 "lap": lap,
                 "duration": lap_duration,
@@ -114,7 +104,7 @@ class F1TelemetryAnalyzer:
     def calculate_distance_matrix(self,
                                   processed_data: pd.DataFrame,
                                   feature: str = "Speed",
-                                  by_event: bool = True) -> Dict[str, pd.DataFrame]:
+                                  by_round: bool = True) -> Dict[str, pd.DataFrame]:
         """
         Calculate Euclidean distances between average lap profiles for each driver.
 
@@ -124,20 +114,21 @@ class F1TelemetryAnalyzer:
         Args:
             processed_data: Preprocessed telemetry data
             feature: Telemetry feature to use for distance calculation (default: "Speed")
-            by_event: Whether to calculate separate distance matrices for each event
+            by_round: Whether to calculate separate distance matrices for each round
 
         Returns:
-            Dict[str, pd.DataFrame]: Dictionary mapping event names to distance matrices.
-                If by_event is False, contains single matrix under key "all"
+            Dict[str, pd.DataFrame]: Dictionary mapping round names to distance matrices.
+                If by_round is False, contains single matrix under key "all"
         """
         distance_matrices = {}
 
-        if by_event:
-            events = processed_data["Event"].unique()
-            for event in events:
-                event_data = processed_data[processed_data["Event"] == event]
-                distance_matrices[event] = self._calculate_single_distance_matrix(
-                    event_data, feature)
+        if by_round:
+            rounds = processed_data["Round"].unique()
+            for round_name in rounds:
+                round_data = processed_data[processed_data["Round"]
+                                            == round_name]
+                distance_matrices[round_name] = self._calculate_single_distance_matrix(
+                    round_data, feature)
         else:
             distance_matrices["all"] = self._calculate_single_distance_matrix(
                 processed_data, feature)
@@ -152,7 +143,7 @@ class F1TelemetryAnalyzer:
         in the dataset.
 
         Args:
-            data: Telemetry data for a single event or all events combined
+            data: Telemetry data for a single round or all rounds combined
             feature: Telemetry feature to use for distance calculation
 
         Returns:
@@ -181,7 +172,7 @@ class F1TelemetryAnalyzer:
 
     def analyze_laps(self,
                      telemetry_data: pd.DataFrame,
-                     events: Optional[List[str]] = None,
+                     rounds: Optional[List[str]] = None,
                      drivers: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Perform comprehensive analysis of lap telemetry data.
@@ -196,7 +187,7 @@ class F1TelemetryAnalyzer:
 
         Args:
             telemetry_data: Raw telemetry data to analyze
-            events: Optional list of events to include in analysis
+            rounds: Optional list of rounds to include in analysis
             drivers: Optional list of drivers to include in analysis
 
         Returns:
@@ -210,17 +201,17 @@ class F1TelemetryAnalyzer:
                 - figure: Matplotlib figure containing all visualizations
         """
         processed_data, lap_metrics = self.preprocess_lap_data(
-            telemetry_data, events, drivers)
+            telemetry_data, rounds, drivers)
         distance_matrices = self.calculate_distance_matrix(
-            processed_data, "Speed", by_event=True)
+            processed_data, "Speed", by_round=True)
 
         fig = plt.figure(figsize=(20, 12))
 
         plt.subplot(221)
-        for event in processed_data["Event"].unique():
-            event_data = processed_data[processed_data["Event"] == event]
+        for round_name in processed_data["Round"].unique():
+            round_data = processed_data[processed_data["Round"] == round_name]
             for driver in processed_data["Driver"].unique():
-                driver_data = event_data[event_data["Driver"] == driver]
+                driver_data = round_data[round_data["Driver"] == driver]
                 grouped = driver_data.groupby("normalized_time")
                 mean_speed = grouped["Speed"].mean()
                 std_speed = grouped["Speed"].std()
@@ -245,23 +236,23 @@ class F1TelemetryAnalyzer:
         processed_data["PC2"] = X_pca[:, 1]
 
         plt.subplot(222)
-        for event in processed_data["Event"].unique():
-            event_data = processed_data[processed_data["Event"] == event]
-            for driver in event_data["Driver"].unique():
-                mask = (processed_data["Event"] == event) & (
+        for round_name in processed_data["Round"].unique():
+            round_data = processed_data[processed_data["Round"] == round_name]
+            for driver in round_data["Driver"].unique():
+                mask = (processed_data["Round"] == round_name) & (
                     processed_data["Driver"] == driver)
                 plt.scatter(X_pca[mask, 0], X_pca[mask, 1],
-                            label=f"{event} - {driver}",
+                            label=f"{round_name} - {driver}",
                             alpha=0.6)
         plt.xlabel("PC1")
         plt.ylabel("PC2")
-        plt.title("PCA Analysis by Event and Driver")
+        plt.title("PCA Analysis by Round and Driver")
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
         plt.subplot(223)
-        sns.boxplot(data=lap_metrics, x="event", y="duration", hue="driver")
+        sns.boxplot(data=lap_metrics, x="round", y="duration", hue="driver")
         plt.xticks(rotation=45)
-        plt.title("Lap Time Distributions by Event and Driver")
+        plt.title("Lap Time Distributions by Round and Driver")
         plt.tight_layout()
 
         plt.subplot(224)
@@ -274,13 +265,13 @@ class F1TelemetryAnalyzer:
         plt.tight_layout()
 
         stats = {
-            "driver_stats": processed_data.groupby(["Event", "Driver"]).agg({
+            "driver_stats": processed_data.groupby(["Round", "Driver"]).agg({
                 "Speed": ["mean", "std", "max", "min"],
                 "Throttle": ["mean", "std"],
                 "Brake": ["mean", "std"],
                 "nGear": ["mean", "std"],
             }).round(2),
-            "lap_time_stats": lap_metrics.groupby(["event", "driver"]).agg({
+            "lap_time_stats": lap_metrics.groupby(["round", "driver"]).agg({
                 "duration": ["mean", "std", "min", "max"],
                 "max_speed": ["mean", "max"],
                 "avg_speed": ["mean"],
