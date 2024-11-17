@@ -25,24 +25,15 @@ class F1DataProcessor:
         if rounds is None:
             rounds = self.schedule["RoundNumber"].tolist()
 
-        all_quali_data = []
-
         for round_num in rounds:
-            quali_data = self._process_quali_session(round_num, "Q")
-            if quali_data is not None:
-                all_quali_data.append(quali_data)
+            quali_data, lap_data = self._process_quali_session(round_num, "Q")
+            return quali_data, lap_data
 
             if include_sprint_quali:
-                sprint_quali = self._process_quali_session(round_num, "SQ")
-                if sprint_quali is not None:
-                    sprint_quali["SessionType"] = "SprintQuali"
-                    all_quali_data.append(sprint_quali)
-
-        if not all_quali_data:
-            raise ValueError(
-                "No valid qualifying data found for the specified rounds")
-
-        return pd.concat(all_quali_data, ignore_index=True)
+                sprint_quali_data, lap_data = self._process_quali_session(
+                    round_num, "SQ")
+                sprint_quali_data["SessionType"] = "SprintQuali"
+                return sprint_quali_data, lap_data
 
     def _process_quali_session(self, round_num: int, session_type: str) -> Optional[pd.DataFrame]:
         cols_to_keep = ["Event", "Driver", "DriverNumber", "Team", "LapTime", "LapNumber", "Stint", "Sector1Time", "Sector2Time",
@@ -115,7 +106,7 @@ class F1DataProcessor:
                 # telemetry_dfs.append(lap_telemetry_df)
                 dfs.append(pivot_telemetry_df)
 
-            return pd.concat(dfs)
+            return quali_df, pd.concat(dfs)
 
         except Exception as e:
             print(f"Error processing qualifying round {round_num}: {str(e)}")
