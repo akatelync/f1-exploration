@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from typing import Optional, List, Union, Dict, Any, Tuple
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -5,42 +7,45 @@ from sklearn.decomposition import PCA
 from scipy.signal import resample
 import matplotlib.pyplot as plt
 import seaborn as sns
-from dataclasses import dataclass
-from typing import Optional, List, Union, Dict, Any
 from datetime import datetime
+
+
+driver_colors = {
+    "VER": "#3671c6",  # Blue
+    "NOR": "#ff8000",  # Orange
+    "LEC": "#e8002d"   # Red
+}
 
 
 @dataclass
 class F1TelemetryAnalyzer:
     """
-    A class for analyzing Formula 1 telemetry data, providing methods for preprocessing,
-    analysis, and visualization of lap-by-lap data.
-
-    This analyzer supports filtering by rounds and drivers, resampling of telemetry data,
-    distance matrix calculations, and comprehensive statistical analysis including PCA.
+    A comprehensive class for analyzing Formula 1 telemetry data, including preprocessing,
+    statistical analysis, PCA, and visualization capabilities.
 
     Attributes:
         n_samples (int): Number of samples to resample each lap's telemetry data to
         feature_cols (List[str]): List of telemetry features to analyze
+        driver_colors (Dict[str, str]): Mapping of driver codes to their colors
+        variance_threshold (float): Threshold for cumulative explained variance in PCA
     """
     n_samples: int = 300
-    feature_cols = ["RPM", "Speed", "nGear", "Throttle", "Brake", "DRS"]
+    feature_cols: List[str] = None
+    variance_threshold: float = 0.95
+
+    def __post_init__(self):
+        """Initialize default values after dataclass initialization"""
+        if self.feature_cols is None:
+            self.feature_cols = ["RPM", "Speed",
+                                 "nGear", "Throttle", "Brake", "DRS"]
+        self.scaler = StandardScaler()
+        self.pca_model = None
 
     def filter_data(self,
                     telemetry_data: pd.DataFrame,
                     rounds: Optional[List[str]] = None,
                     drivers: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Filter telemetry data by rounds and/or drivers.
-
-        Args:
-            telemetry_data: Raw telemetry DataFrame containing all rounds and drivers
-            rounds: Optional list of round names to include in the filtered data
-            drivers: Optional list of driver names to include in the filtered data
-
-        Returns:
-            pd.DataFrame: Filtered telemetry data containing only specified rounds and drivers
-        """
+        """Filter telemetry data by rounds and/or drivers."""
         filtered_data = telemetry_data.copy()
 
         if rounds:
@@ -54,25 +59,8 @@ class F1TelemetryAnalyzer:
     def preprocess_lap_data(self,
                             telemetry_data: pd.DataFrame,
                             rounds: Optional[List[int]] = None,
-                            drivers: Optional[List[str]] = None):
-        """
-        Preprocess telemetry data by aligning and resampling lap data to fixed length.
-
-        This method performs several preprocessing steps:
-        1. Filters data by specified rounds and drivers
-        2. Resamples each lap's telemetry to a fixed number of points
-        3. Calculates various lap metrics (duration, speeds, brake applications, etc.)
-
-        Args:
-            telemetry_data: Raw telemetry DataFrame to process
-            rounds: Optional list of rounds to include
-            drivers: Optional list of drivers to include
-
-        Returns:
-            Tuple[pd.DataFrame, pd.DataFrame]: Tuple containing:
-                - Processed telemetry data with resampled features
-                - DataFrame of lap metrics including duration, speeds, etc.
-        """
+                            drivers: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Preprocess telemetry data by aligning and resampling lap data."""
         filtered_data = self.filter_data(telemetry_data, rounds, drivers)
 
         grouped = filtered_data.groupby(["Round", "Driver", "LapNumber"])
@@ -105,21 +93,7 @@ class F1TelemetryAnalyzer:
                                   processed_data: pd.DataFrame,
                                   feature: str = "Speed",
                                   by_round: bool = True) -> Dict[str, pd.DataFrame]:
-        """
-        Calculate Euclidean distances between average lap profiles for each driver.
-
-        Computes distance matrices showing how similar or different drivers' lap profiles
-        are from each other, based on a specified telemetry feature.
-
-        Args:
-            processed_data: Preprocessed telemetry data
-            feature: Telemetry feature to use for distance calculation (default: "Speed")
-            by_round: Whether to calculate separate distance matrices for each round
-
-        Returns:
-            Dict[str, pd.DataFrame]: Dictionary mapping round names to distance matrices.
-                If by_round is False, contains single matrix under key "all"
-        """
+        """Calculate Euclidean distances between average lap profiles for each driver."""
         distance_matrices = {}
 
         if by_round:
@@ -135,20 +109,10 @@ class F1TelemetryAnalyzer:
 
         return distance_matrices
 
-    def _calculate_single_distance_matrix(self, data: pd.DataFrame, feature: str) -> pd.DataFrame:
-        """
-        Helper method to calculate distance matrix for a single dataset.
-
-        Computes Euclidean distances between average lap profiles for each pair of drivers
-        in the dataset.
-
-        Args:
-            data: Telemetry data for a single round or all rounds combined
-            feature: Telemetry feature to use for distance calculation
-
-        Returns:
-            pd.DataFrame: Square matrix of distances between drivers' average lap profiles
-        """
+    def _calculate_single_distance_matrix(self,
+                                          data: pd.DataFrame,
+                                          feature: str) -> pd.DataFrame:
+        """Helper method to calculate distance matrix for a single dataset."""
         drivers = data["Driver"].unique()
         distance_matrix = np.zeros((len(drivers), len(drivers)))
         driver_profiles = {}
@@ -170,122 +134,208 @@ class F1TelemetryAnalyzer:
 
         return pd.DataFrame(distance_matrix, index=drivers, columns=drivers)
 
-    def analyze_laps(self,
-                     telemetry_data: pd.DataFrame,
-                     rounds: Optional[List[str]] = None,
-                     drivers: Optional[List[str]] = None) -> Dict[str, Any]:
-        """
-        Perform comprehensive analysis of lap telemetry data.
+    def determine_optimal_components(self,
+                                     X_scaled: np.ndarray) -> Tuple[int, PCA]:
+        """Determines optimal number of PCA components using scree plot."""
+        pca_all = PCA()
+        pca_all.fit(X_scaled)
 
-        This method provides a complete analysis suite including:
-        - Data preprocessing and resampling
-        - Speed profile analysis with confidence intervals
-        - Distance matrix calculations between drivers
-        - PCA analysis of telemetry features
-        - Statistical summaries of lap times and telemetry features
-        - Visualization of all analyses
+        plt.figure(figsize=(12, 6))
+        cum_var_ratio = np.cumsum(pca_all.explained_variance_ratio_)
+        plt.plot(range(1, len(cum_var_ratio) + 1), cum_var_ratio, 'bo-')
+        plt.xlabel('Number of Components')
+        plt.ylabel('Cumulative Explained Variance Ratio')
+        plt.title(
+            'Scree Plot: Cumulative Explained Variance vs. Number of Components')
+        plt.grid(True)
+        plt.show()
+
+        n_components = np.argmax(cum_var_ratio >= self.variance_threshold) + 1
+        print(
+            f"Number of components needed for {self.variance_threshold*100}% variance: {n_components}")
+
+        return n_components, pca_all
+
+    def analyze_drivers_pca(self,
+                            reshaped_data: pd.DataFrame,
+                            selected_drivers: List[str],
+                            session_type: str) -> Dict[str, Any]:
+        """Perform PCA analysis on selected drivers with dynamic component selection."""
+        # Filter data for selected drivers
+        X = reshaped_data.loc[(slice(None), selected_drivers), :]
+
+        # Scale data
+        X_scaled = self.scaler.fit_transform(X)
+
+        # Get optimal components
+        n_components, _ = self.determine_optimal_components(X_scaled)
+        self.pca_model = PCA(n_components=n_components)
+        X_pca = self.pca_model.fit_transform(X_scaled)
+
+        # Create PCA DataFrame
+        pca_cols = [f"PC{i+1}" for i in range(n_components)]
+        pca_df = pd.DataFrame(X_pca, columns=pca_cols)
+        pca_df["Driver"] = X.index.get_level_values("Driver")
+
+        # Plot PCA results
+        self._plot_pca_results(pca_df, selected_drivers, session_type)
+
+        # Calculate and plot centroids
+        centroids, spreads = self._calculate_centroids_and_spreads(
+            pca_df, pca_cols)
+        self._plot_centroids_with_spreads(
+            centroids, spreads, selected_drivers, session_type)
+
+        # Print analysis results
+        self._print_analysis_results(centroids, spreads, selected_drivers)
+
+        return {
+            "pca": self.pca_model,
+            "pca_df": pca_df,
+            "centroids": centroids,
+            "spreads": spreads
+        }
+
+    def _plot_pca_results(self,
+                          pca_df: pd.DataFrame,
+                          selected_drivers: List[str],
+                          session_type: str):
+        """Helper method to plot PCA results."""
+        plt.figure(figsize=(10, 6))
+        for driver in selected_drivers:
+            driver_data = pca_df[pca_df["Driver"] == driver]
+            plt.scatter(driver_data["PC1"], driver_data["PC2"],
+                        c=driver_colors[driver],
+                        label=driver, s=100, alpha=0.6)
+
+        plt.title(
+            f"{session_type} Driver Comparison: {', '.join(selected_drivers)}")
+        plt.xlabel(
+            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)")
+        plt.ylabel(
+            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+        plt.show()
+
+    def _calculate_centroids_and_spreads(self,
+                                         pca_df: pd.DataFrame,
+                                         pca_cols: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Calculate centroids and spreads for PCA results."""
+        centroids = pca_df.groupby("Driver")[pca_cols].mean()
+        spreads = pca_df.groupby("Driver")[pca_cols].std()
+        return centroids, spreads
+
+    def _plot_centroids_with_spreads(self,
+                                     centroids: pd.DataFrame,
+                                     spreads: pd.DataFrame,
+                                     selected_drivers: List[str],
+                                     session_type: str):
+        """Plot centroids with error bars."""
+        plt.figure(figsize=(10, 6))
+        for driver in selected_drivers:
+            plt.errorbar(
+                centroids.loc[driver, "PC1"],
+                centroids.loc[driver, "PC2"],
+                xerr=spreads.loc[driver, "PC1"],
+                yerr=spreads.loc[driver, "PC2"],
+                label=driver,
+                c=driver_colors[driver],
+                fmt="o",
+                capsize=5,
+                capthick=2,
+                markersize=10,
+                alpha=0.6
+            )
+
+        plt.title(
+            f"{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}")
+        plt.xlabel(
+            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)")
+        plt.ylabel(
+            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)")
+        plt.grid(True, alpha=0.3)
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+        plt.show()
+
+    def _print_analysis_results(self,
+                                centroids: pd.DataFrame,
+                                spreads: pd.DataFrame,
+                                selected_drivers: List[str]):
+        """Print analysis results including centroids and pairwise distances."""
+        print("\nDriver Centroids (average position in PCA space):")
+        print(centroids)
+        print("\nDriver Variability (spread in PCA space):")
+        print(spreads)
+
+        print("\nPairwise Distances between Drivers:")
+        for i, driver1 in enumerate(selected_drivers):
+            for driver2 in selected_drivers[i+1:]:
+                distance = np.linalg.norm(
+                    centroids.loc[driver1] - centroids.loc[driver2]
+                )
+                print(f"{driver1} vs {driver2}: {distance:.2f}")
+
+    def _reshape_telemetry_data(self, processed_laps: pd.DataFrame) -> pd.DataFrame:
+        """
+        Reshape telemetry data from long format to wide format where each lap's metrics
+        are spread across columns with sequential numbering.
 
         Args:
-            telemetry_data: Raw telemetry data to analyze
-            rounds: Optional list of rounds to include in analysis
-            drivers: Optional list of drivers to include in analysis
+            processed_laps: DataFrame containing processed lap telemetry data
 
         Returns:
-            Dict[str, Any]: Dictionary containing:
-                - processed_data: Resampled and processed telemetry data
-                - lap_metrics: Calculated metrics for each lap
-                - distance_matrices: Driver similarity matrices
-                - pca_transformed: PCA-transformed telemetry data
-                - pca_explained_variance: Explained variance ratios for PCA
-                - statistics: Summary statistics for drivers and laps
-                - figure: Matplotlib figure containing all visualizations
+            pd.DataFrame: Reshaped DataFrame where each row represents a unique lap and
+                        columns are named as {metric}_{index}
         """
+        grouped_data = []
+
+        for (round_num, driver, lap_num), lap_data in processed_laps.groupby(["Round", "Driver", "LapNumber"]):
+            reshaped_data = {
+                "Round": round_num,
+                "Driver": driver,
+                "LapNumber": lap_num
+            }
+
+            for metric in self.feature_cols:
+                for idx, value in enumerate(lap_data[metric]):
+                    reshaped_data[f"{metric}_{idx}"] = value
+
+            grouped_data.append(reshaped_data)
+
+        reshaped_df = pd.DataFrame(grouped_data)
+        reshaped_df.set_index(["Round", "Driver", "LapNumber"], inplace=True)
+
+        return reshaped_df
+
+    def analyze_laps(self,
+                     telemetry_data: pd.DataFrame,
+                     session_type: str,
+                     rounds: Optional[List[str]] = None,
+                     drivers: Optional[List[str]] = None,
+                     pca: Optional[bool] = None) -> Dict[str, Any]:
+        """Perform comprehensive analysis of lap telemetry data."""
+        # Process telemetry data
         processed_data, lap_metrics = self.preprocess_lap_data(
             telemetry_data, rounds, drivers)
+
+        # Reshape telemetry data
+        reshaped_data = self._reshape_telemetry_data(processed_data)
+
+        # Calculate distance matrices
         distance_matrices = self.calculate_distance_matrix(
             processed_data, "Speed", by_round=True)
 
-        fig = plt.figure(figsize=(20, 12))
-
-        plt.subplot(221)
-        for round_name in processed_data["Round"].unique():
-            round_data = processed_data[processed_data["Round"] == round_name]
-            for driver in processed_data["Driver"].unique():
-                driver_data = round_data[round_data["Driver"] == driver]
-                grouped = driver_data.groupby("normalized_time")
-                mean_speed = grouped["Speed"].mean()
-                std_speed = grouped["Speed"].std()
-
-                plt.plot(driver_data["normalized_time"].unique(),
-                         mean_speed, label=driver)
-                plt.fill_between(driver_data["normalized_time"].unique(),
-                                 mean_speed - std_speed,
-                                 mean_speed + std_speed,
-                                 alpha=0.2)
-
-        plt.xlabel("Normalized Lap Time")
-        plt.ylabel("Speed")
-        plt.title("Speed Profiles with Confidence Intervals")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(processed_data[self.feature_cols])
-        pca = PCA(n_components=3)
-        X_pca = pca.fit_transform(X_scaled)
-        processed_data["PC1"] = X_pca[:, 0]
-        processed_data["PC2"] = X_pca[:, 1]
-
-        plt.subplot(222)
-        for round_name in processed_data["Round"].unique():
-            round_data = processed_data[processed_data["Round"] == round_name]
-            for driver in round_data["Driver"].unique():
-                mask = (processed_data["Round"] == round_name) & (
-                    processed_data["Driver"] == driver)
-                plt.scatter(X_pca[mask, 0], X_pca[mask, 1],
-                            label=f"{round_name} - {driver}",
-                            alpha=0.6)
-        plt.xlabel("PC1")
-        plt.ylabel("PC2")
-        plt.title("PCA Analysis by Round and Driver")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-
-        plt.subplot(223)
-        sns.boxplot(data=lap_metrics, x="round", y="duration", hue="driver")
-        plt.xticks(rotation=45)
-        plt.title("Lap Time Distributions by Round and Driver")
-        plt.tight_layout()
-
-        plt.subplot(224)
-        feature_importance = pd.DataFrame({
-            "feature": self.feature_cols,
-            "importance": np.abs(pca.components_[0])
-        }).sort_values("importance", ascending=True)
-        sns.barplot(data=feature_importance, x="importance", y="feature")
-        plt.title("Feature Importance (PC1)")
-        plt.tight_layout()
-
-        stats = {
-            "driver_stats": processed_data.groupby(["Round", "Driver"]).agg({
-                "Speed": ["mean", "std", "max", "min"],
-                "Throttle": ["mean", "std"],
-                "Brake": ["mean", "std"],
-                "nGear": ["mean", "std"],
-            }).round(2),
-            "lap_time_stats": lap_metrics.groupby(["round", "driver"]).agg({
-                "duration": ["mean", "std", "min", "max"],
-                "max_speed": ["mean", "max"],
-                "avg_speed": ["mean"],
-                "brake_applications": ["mean"],
-                "drs_zones": ["mean"]
-            }).round(2)
-        }
+        # Perform PCA analysis if drivers are specified
+        pca_results = None
+        if pca:
+            pca_results = self.analyze_drivers_pca(
+                reshaped_data, drivers, session_type)
 
         return {
             "processed_data": processed_data,
             "lap_metrics": lap_metrics,
             "distance_matrices": distance_matrices,
-            "pca_transformed": X_pca,
-            "pca_explained_variance": pca.explained_variance_ratio_,
-            "statistics": stats,
-            "figure": fig
+            "pca_results": pca_results
         }

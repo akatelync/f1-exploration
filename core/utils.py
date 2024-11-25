@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from typing import Optional, List, Union, Dict, Any
 
 round_dict = {1: 'Bahrain Grand Prix',
               2: 'Saudi Arabian Grand Prix',
@@ -34,9 +35,30 @@ driver_colors = {
     "LEC": "#e8002d"   # Red
 }
 
+drivers = ["LEC", "NOR", "VER"]
 
-def plot_distance_matrices(results):
-    num_plots = len(results["distance_matrices"])
+
+def plot_distance_matrices(
+    distance_matrices: Dict[np.int64, np.ndarray],
+    rounds: Optional[Union[int, List[int]]] = None
+) -> Dict[np.int64, np.ndarray]:
+    """
+    Filter distance matrices based on specified rounds.
+
+    Args:
+        distance_matrices: Dictionary mapping round numbers to distance matrices
+        rounds: Single round number (int) or list of round numbers to filter by
+
+    Returns:
+        Filtered dictionary of distance matrices
+    """
+    if rounds:
+        # Convert single integer to list if necessary
+        rounds_list = [rounds] if isinstance(rounds, int) else rounds
+
+    distance_matrices = {
+        k: v for k, v in distance_matrices.items() if k in rounds_list}
+    num_plots = len(distance_matrices)
 
     # Dynamic layout calculation
     if num_plots <= 3:
@@ -52,12 +74,10 @@ def plot_distance_matrices(results):
         num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))
     fig.suptitle("Distance Matrices by Round", fontsize=14, y=1.02)
 
-    drivers = ["LEC", "NOR", "VER"]
-
     # Convert axes to array for consistent indexing
     axes = np.array(axes).reshape(-1) if num_plots == 1 else np.array(axes)
 
-    for idx, (round_key, matrix_data) in enumerate(results["distance_matrices"].items()):
+    for idx, (round_key, matrix_data) in enumerate(distance_matrices.items()):
         current_ax = axes.flatten()[idx]
 
         matrix = np.array([[matrix_data[i][j] for j in drivers]
@@ -172,3 +192,229 @@ def analyze_selected_drivers_pca(df, driver_info, selected_drivers):
         "centroids": driver_centroids,
         "spreads": driver_spreads
     }
+
+
+def plot_speed_profile(
+    processed_laps: pd.DataFrame,
+    rounds: Optional[Union[int, List[int]]] = None
+) -> None:
+    """
+    Creates speed profile plots for specified rounds.
+
+    Args:
+        processed_laps: DataFrame containing the lap data with columns:
+                       ['Round', 'Driver', 'normalized_time', 'Speed']
+        rounds: Single round number (int) or list of round numbers to filter by
+               If None, plots all available rounds
+
+    Returns:
+        None. Displays the speed profile plots.
+    """
+
+    if rounds:
+        # Convert single integer to list if necessary
+        rounds_list = [rounds] if isinstance(rounds, int) else rounds
+
+    processed_laps = processed_laps[processed_laps["Round"].isin(rounds_list)]
+    rounds = processed_laps["Round"].unique()
+    num_rounds = len(rounds)
+
+    # Set number of columns to 3
+    num_cols = 3
+    num_rows = (num_rounds + num_cols - 1) // num_cols
+
+    # Create figure with extra space on the right for the legend
+    # Slightly wider to accommodate legend
+    fig = plt.figure(figsize=(22, 5*num_rows))
+
+    for idx, round_num in enumerate(rounds, 1):
+        ax = plt.subplot(num_rows, num_cols, idx)
+
+        round_data = processed_laps[processed_laps["Round"] == round_num]
+        for driver in processed_laps["Driver"].unique():
+            driver_data = round_data[round_data["Driver"] == driver]
+            grouped = driver_data.groupby("normalized_time")
+            mean_speed = grouped["Speed"].mean()
+            std_speed = grouped["Speed"].std()
+
+            # Use the driver-specific color for both the line and fill
+            driver_color = driver_colors.get(driver)
+            plt.plot(driver_data["normalized_time"].unique(),
+                     mean_speed,
+                     label=driver if idx == 1 else "",  # Only include label for first subplot
+                     color=driver_color)
+            plt.fill_between(driver_data["normalized_time"].unique(),
+                             mean_speed - std_speed,
+                             mean_speed + std_speed,
+                             alpha=0.2,
+                             color=driver_color)
+
+            plt.xlabel("Normalized Lap Time")
+            plt.ylabel("Speed")
+            plt.title(f"Qualifying Speed Profiles - {round_dict[round_num]}")
+
+    fig.legend(bbox_to_anchor=(0.5, 1.01), loc="lower center",
+               ncol=len(driver_colors), fontsize=13)
+    # Adjusted to leave space at the top for legend
+    plt.tight_layout(rect=[0, 0, 1, 1])
+
+
+def plot_combined_analysis(
+    distance_matrices: Dict[np.int64, np.ndarray],
+    processed_laps: pd.DataFrame,
+    rounds: Optional[Union[int, List[int]]] = None,
+) -> None:
+    """
+    Creates a combined visualization with distance matrices and speed profiles side by side for each round.
+
+    Args:
+        distance_matrices: Dictionary mapping round numbers to distance matrices
+        processed_laps: DataFrame containing processed lap data with columns:
+                       ['Round', 'Driver', 'normalized_time', 'Speed']
+        rounds: Single round number (int) or list of round numbers to filter by
+        driver_colors: Dictionary mapping driver codes to their color codes
+        round_dict: Dictionary mapping round numbers to race names
+
+    Returns:
+        None. Displays the combined plots.
+    """
+    if rounds is not None:
+        rounds_list = [rounds] if isinstance(rounds, int) else rounds
+        distance_matrices = {
+            k: v for k, v in distance_matrices.items() if k in rounds_list}
+        processed_laps = processed_laps[processed_laps["Round"].isin(
+            rounds_list)]
+
+    num_rounds = len(distance_matrices)
+
+    # Create figure with subplots
+    fig = plt.figure(figsize=(20, 5 * num_rounds), dpi=300)
+
+    # Loop through each round
+    for idx, (round_num, matrix_data) in enumerate(distance_matrices.items(), 1):
+        # Distance Matrix subplot (left)
+        ax1 = plt.subplot(num_rounds, 2, 2*idx - 1)
+
+        # Create distance matrix heatmap
+        matrix = np.array([[matrix_data[i][j] for j in drivers]
+                          for i in drivers])
+        sns.heatmap(
+            matrix,
+            ax=ax1,
+            cmap="YlOrRd",
+            annot=True,
+            fmt=".2f",
+            square=True,
+            xticklabels=drivers,
+            yticklabels=drivers,
+            cbar_kws={"label": "Distance"}
+        )
+        ax1.set_title(
+            f"Distance Matrix - Round {round_num}\n{round_dict[round_num]}", pad=10)
+        ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45)
+        ax1.set_yticklabels(ax1.get_yticklabels(), rotation=0)
+
+        # Speed Profile subplot (right)
+        ax2 = plt.subplot(num_rounds, 2, 2*idx)
+
+        # Create speed profile plot
+        round_data = processed_laps[processed_laps["Round"] == round_num]
+        for driver in drivers:
+            driver_data = round_data[round_data["Driver"] == driver]
+            if not driver_data.empty:
+                grouped = driver_data.groupby("normalized_time")
+                mean_speed = grouped["Speed"].mean()
+                std_speed = grouped["Speed"].std()
+
+                driver_color = driver_colors.get(driver)
+                ax2.plot(
+                    driver_data["normalized_time"].unique(),
+                    mean_speed,
+                    label=driver,
+                    color=driver_color
+                )
+                ax2.fill_between(
+                    driver_data["normalized_time"].unique(),
+                    mean_speed - std_speed,
+                    mean_speed + std_speed,
+                    alpha=0.2,
+                    color=driver_color
+                )
+
+        ax2.set_xlabel("Normalized Lap Time")
+        ax2.set_ylabel("Speed")
+        ax2.set_title(
+            f"Speed Profile - Round {round_num}\n{round_dict[round_num]}")
+        ax2.legend(loc="lower left")
+
+    plt.tight_layout()
+
+
+def reshape_telemetry_data(
+    telemetry_df: pd.DataFrame,
+    metric_cols: Optional[List[str]] = None,
+    index_cols: List[str] = ["Round", "Driver", "LapNumber"]
+) -> pd.DataFrame:
+    """
+    Reshapes telemetry data from long format to wide format where each lap's metrics
+    are spread across columns with sequential numbering.
+
+    Args:
+        telemetry_df: DataFrame containing telemetry data with at least the following columns:
+                     - Round
+                     - Driver
+                     - LapNumber 
+                     - Metric columns (e.g., RPM, Speed, etc.)
+        metric_cols: List of metric column names to reshape. If None, defaults to 
+                    ["RPM", "Speed", "nGear", "Throttle", "Brake", "DRS"]
+        index_cols: List of columns to use as index in the final DataFrame.
+                   Default is ["Round", "Driver", "LapNumber"]
+
+    Returns:
+        pd.DataFrame: Reshaped DataFrame where:
+            - Each row represents a unique lap
+            - Columns are named as {metric}_{index} where index represents the sequential
+              position in the lap
+            - DataFrame is indexed by index_cols
+
+    Example:
+        >>> metric_columns = ["Speed", "RPM"]
+        >>> reshaped_df = reshape_telemetry_data(quali_telemetry, metric_cols=metric_columns)
+        >>> # Results in columns like: Speed_0, Speed_1, ..., RPM_0, RPM_1, ...
+    """
+    # Default metric columns if none provided
+    if metric_cols is None:
+        metric_cols = ["RPM", "Speed", "nGear", "Throttle", "Brake", "DRS"]
+
+    # Validate input DataFrame has required columns
+    required_cols = index_cols + metric_cols
+    missing_cols = [
+        col for col in required_cols if col not in telemetry_df.columns]
+    if missing_cols:
+        raise ValueError(
+            f"Missing required columns in telemetry_df: {missing_cols}")
+
+    grouped_data: List[Dict[str, Any]] = []
+
+    # Group by index columns and reshape data
+    for group_key, lap_data in telemetry_df.groupby(index_cols):
+        # Convert group_key to dict if it's a tuple
+        if isinstance(group_key, tuple):
+            group_dict = dict(zip(index_cols, group_key))
+        else:
+            group_dict = {index_cols[0]: group_key}
+
+        reshaped_data = group_dict.copy()
+
+        # Reshape each metric into sequential columns
+        for metric in metric_cols:
+            for idx, value in enumerate(lap_data[metric]):
+                reshaped_data[f"{metric}_{idx}"] = value
+
+        grouped_data.append(reshaped_data)
+
+    # Create DataFrame and set index
+    reshaped_df = pd.DataFrame(grouped_data)
+    reshaped_df.set_index(index_cols, inplace=True)
+
+    return reshaped_df
