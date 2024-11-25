@@ -13,7 +13,15 @@ from datetime import datetime
 driver_colors = {
     "VER": "#3671c6",  # Blue
     "NOR": "#ff8000",  # Orange
-    "LEC": "#e8002d"   # Red
+    "LEC": "#e8002d",
+    "PIA": "#ff8000",   # Red
+}
+
+driver_markers = {
+    "LEC": "o",  # circle
+    "VER": "x",  # square
+    "NOR": "*",  # triangle up
+    "PIA": "D"   # diamond
 }
 
 
@@ -32,6 +40,7 @@ class F1TelemetryAnalyzer:
     n_samples: int = 300
     feature_cols: List[str] = None
     variance_threshold: float = 0.95
+    show_plots: bool = True
 
     def __post_init__(self):
         """Initialize default values after dataclass initialization"""
@@ -140,17 +149,19 @@ class F1TelemetryAnalyzer:
         pca_all = PCA()
         pca_all.fit(X_scaled)
 
-        plt.figure(figsize=(12, 6))
-        cum_var_ratio = np.cumsum(pca_all.explained_variance_ratio_)
-        plt.plot(range(1, len(cum_var_ratio) + 1), cum_var_ratio, 'bo-')
-        plt.xlabel('Number of Components')
-        plt.ylabel('Cumulative Explained Variance Ratio')
-        plt.title(
-            'Scree Plot: Cumulative Explained Variance vs. Number of Components')
-        plt.grid(True)
-        plt.show()
+        if self.show_plots:
+            plt.figure(figsize=(12, 6), dpi=150)
+            cum_var_ratio = np.cumsum(pca_all.explained_variance_ratio_)
+            plt.plot(range(1, len(cum_var_ratio) + 1), cum_var_ratio, 'bo-')
+            plt.xlabel('Number of Components')
+            plt.ylabel('Cumulative Explained Variance Ratio')
+            plt.title(
+                'Scree Plot: Cumulative Explained Variance vs. Number of Components')
+            plt.grid(True)
+            plt.show()
 
-        n_components = np.argmax(cum_var_ratio >= self.variance_threshold) + 1
+        n_components = np.argmax(
+            np.cumsum(pca_all.explained_variance_ratio_) >= self.variance_threshold) + 1
         print(
             f"Number of components needed for {self.variance_threshold*100}% variance: {n_components}")
 
@@ -201,21 +212,29 @@ class F1TelemetryAnalyzer:
                           selected_drivers: List[str],
                           session_type: str):
         """Helper method to plot PCA results."""
-        plt.figure(figsize=(10, 6))
+        if not self.show_plots:
+            return
+
+        plt.figure(figsize=(10, 6), dpi=150)
         for driver in selected_drivers:
             driver_data = pca_df[pca_df["Driver"] == driver]
             plt.scatter(driver_data["PC1"], driver_data["PC2"],
                         c=driver_colors[driver],
+                        marker=driver_markers[driver],
                         label=driver, s=100, alpha=0.6)
 
-        plt.title(
-            f"{session_type} Driver Comparison: {', '.join(selected_drivers)}")
+        # plt.title(
+        #     f"{session_type} Driver Comparison: {', '.join(selected_drivers)}")
         plt.xlabel(
-            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)")
+            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)", fontsize=14)
         plt.ylabel(
-            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)", fontsize=14)
+        plt.xticks(fontsize=13)
+        plt.yticks(fontsize=13)
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=13)
         plt.tight_layout()
+        plt.savefig(
+            f"imgs/{session_type} Driver Comparison: {', '.join(selected_drivers)}.png")
         plt.show()
 
     def _calculate_centroids_and_spreads(self,
@@ -232,7 +251,10 @@ class F1TelemetryAnalyzer:
                                      selected_drivers: List[str],
                                      session_type: str):
         """Plot centroids with error bars."""
-        plt.figure(figsize=(10, 6))
+        if not self.show_plots:
+            return
+
+        plt.figure(figsize=(10, 6), dpi=150)
         for driver in selected_drivers:
             plt.errorbar(
                 centroids.loc[driver, "PC1"],
@@ -241,6 +263,7 @@ class F1TelemetryAnalyzer:
                 yerr=spreads.loc[driver, "PC2"],
                 label=driver,
                 c=driver_colors[driver],
+                marker=driver_markers[driver],
                 fmt="o",
                 capsize=5,
                 capthick=2,
@@ -248,15 +271,19 @@ class F1TelemetryAnalyzer:
                 alpha=0.6
             )
 
-        plt.title(
-            f"{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}")
+        # plt.title(
+        #     f"{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}")
         plt.xlabel(
-            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)")
+            f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)", fontsize=14)
         plt.ylabel(
-            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)")
+            f"PC2 ({self.pca_model.explained_variance_ratio_[1]:.1%} variance)", fontsize=14)
+        plt.xticks(fontsize=13)
+        plt.yticks(fontsize=13)
         plt.grid(True, alpha=0.3)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=13)
         plt.tight_layout()
+        plt.savefig(
+            f"imgs/{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}.png")
         plt.show()
 
     def _print_analysis_results(self,
