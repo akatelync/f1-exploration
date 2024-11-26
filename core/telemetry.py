@@ -150,7 +150,7 @@ class F1TelemetryAnalyzer:
         pca_all.fit(X_scaled)
 
         if self.show_plots:
-            plt.figure(figsize=(12, 6), dpi=150)
+            plt.figure(figsize=(10, 6))
             cum_var_ratio = np.cumsum(pca_all.explained_variance_ratio_)
             plt.plot(range(1, len(cum_var_ratio) + 1), cum_var_ratio, 'bo-')
             plt.xlabel('Number of Components')
@@ -215,7 +215,7 @@ class F1TelemetryAnalyzer:
         if not self.show_plots:
             return
 
-        plt.figure(figsize=(10, 6), dpi=150)
+        plt.figure(figsize=(10, 6))
         for driver in selected_drivers:
             driver_data = pca_df[pca_df["Driver"] == driver]
             plt.scatter(driver_data["PC1"], driver_data["PC2"],
@@ -223,8 +223,8 @@ class F1TelemetryAnalyzer:
                         marker=driver_markers[driver],
                         label=driver, s=100, alpha=0.6)
 
-        # plt.title(
-        #     f"{session_type} Driver Comparison: {', '.join(selected_drivers)}")
+        plt.title(
+            f"{session_type} Driver Comparison: {', '.join(selected_drivers)}")
         plt.xlabel(
             f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)", fontsize=14)
         plt.ylabel(
@@ -233,8 +233,8 @@ class F1TelemetryAnalyzer:
         plt.yticks(fontsize=13)
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=13)
         plt.tight_layout()
-        plt.savefig(
-            f"imgs/{session_type} Driver Comparison: {', '.join(selected_drivers)}.png")
+        # plt.savefig(
+        #     f"imgs/{session_type} Driver Comparison: {', '.join(selected_drivers)}.png")
         plt.show()
 
     def _calculate_centroids_and_spreads(self,
@@ -254,7 +254,7 @@ class F1TelemetryAnalyzer:
         if not self.show_plots:
             return
 
-        plt.figure(figsize=(10, 6), dpi=150)
+        plt.figure(figsize=(10, 6))
         for driver in selected_drivers:
             plt.errorbar(
                 centroids.loc[driver, "PC1"],
@@ -271,8 +271,8 @@ class F1TelemetryAnalyzer:
                 alpha=0.6
             )
 
-        # plt.title(
-        #     f"{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}")
+        plt.title(
+            f"{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}")
         plt.xlabel(
             f"PC1 ({self.pca_model.explained_variance_ratio_[0]:.1%} variance)", fontsize=14)
         plt.ylabel(
@@ -282,8 +282,8 @@ class F1TelemetryAnalyzer:
         plt.grid(True, alpha=0.3)
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=13)
         plt.tight_layout()
-        plt.savefig(
-            f"imgs/{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}.png")
+        # plt.savefig(
+        #     f"imgs/{session_type} Driving Styles Comparison: {', '.join(selected_drivers)}.png")
         plt.show()
 
     def _print_analysis_results(self,

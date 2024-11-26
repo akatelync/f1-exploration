@@ -288,7 +288,7 @@ def plot_combined_analysis(
     num_rounds = len(distance_matrices)
 
     # Create figure with subplots
-    fig = plt.figure(figsize=(20, 5 * num_rounds), dpi=300)
+    fig = plt.figure(figsize=(20, 5 * num_rounds))
 
     # Loop through each round
     for idx, (round_num, matrix_data) in enumerate(distance_matrices.items(), 1):

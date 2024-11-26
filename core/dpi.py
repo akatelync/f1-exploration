@@ -256,7 +256,7 @@ class F1DriverPerformanceIndex:
 
     def plot_performance_breakdown(self, performance_index: pd.DataFrame) -> None:
         """Create visualization of performance index breakdown for each driver"""
-        plt.figure(figsize=(12, 6), dpi=150)
+        plt.figure(figsize=(12, 6))
 
         metrics = ["Consistency", "Style", "Technical", "Pace"]
         bottom = np.zeros(len(performance_index))
@@ -273,14 +273,14 @@ class F1DriverPerformanceIndex:
             )
             bottom += performance_index[metric] * weight
 
-        # plt.title(f"{self.session_type} Performance Index Breakdown")
+        plt.title(f"{self.session_type} Performance Index Breakdown")
         plt.xlabel("Driver", fontsize=14)
         plt.ylabel("Performance Index", fontsize=14)
         plt.xticks(fontsize=13)
         plt.yticks(fontsize=13)
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=14)
         plt.tight_layout()
-        plt.savefig(f"imgs/{self.session_type} Performance Index Breakdown")
+        # plt.savefig(f"imgs/{self.session_type} Performance Index Breakdown")
         plt.show()
 
         return performance_index
