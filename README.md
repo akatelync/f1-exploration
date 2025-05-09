@@ -28,9 +28,21 @@ git clone https://github.com/akatelync/f1-exploration.git
 cd f1-exploration
 ```
 
-2. Install required dependencies:
+2. Set up environment with UV:
 ```bash
-pip install .
+# Create virtual environment
+uv venv .venv
+
+# Activate the environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+uv pip install -e .
+```
+
+3. Register the IPykernel for Jupyter:
+```bash
+python -m ipykernel install --user --name=f1-exploration --display-name="Python (F1 Exploration)"
 ```
 
 ## Project Structure
@@ -42,7 +54,10 @@ f1-exploration/
 │   ├── telemetry.py    # Telemetry analysis functions
 │   ├── dpi.py          # Driver Performance Index calculations
 │   └── utils.py        # Utility functions
-├── analysis_notebook.ipynb  # Example analysis notebook
+├── notebooks/          # Jupyter notebooks for analysis examples
+├── tests/              # Unit tests
+├── pyproject.toml      # Project dependencies and metadata
+└── README.md          # Project documentation
 ```
 
 ## Usage
@@ -116,12 +131,35 @@ dpi.plot_performance_breakdown(performance_index)
 - **Technical Score**: Assess throttle control, braking efficiency, and gear changes
 - **Pace Score**: Calculate relative pace and position-based performance
 
+## Development
+
+### Setting up a Development Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/akatelync/f1-exploration.git
+cd f1-exploration
+
+# Create and activate a virtual environment with UV
+uv venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install in development mode
+uv pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
 ## Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feat/AmazingFeature`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
 ## Dependencies
@@ -133,6 +171,8 @@ dpi.plot_performance_breakdown(performance_index)
 - matplotlib
 - seaborn
 - scipy
+- jupyter
+- ipykernel
 
 ## Data Sources
 
